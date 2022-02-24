@@ -1,0 +1,8 @@
+sellconditions = 0
+if ta.crossover(sma1, rsi) == ta.crossover(upp, rsi) == ta.crossunder(rsi, HH) and ta.barssince(sellArrow) < ta.barssince(buyArrow)
+  sellconditions:=4
+plotchar(sellconditions==4, char='🔶', location=location.abovebar, color=#ff0000, text="4", size=size.tiny)
+
+strategy.entry(id=sell1, strategy.short, qty=1, when=sellconditions==4, alert_message="long entry 1")   
+
+strategy.exit("exit short", from_entry=sell1, profit = 1000, loss = 200, trail_points=200, trail_offset=100, alert_message="Close sell2")
