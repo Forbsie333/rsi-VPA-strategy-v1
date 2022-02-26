@@ -1,8 +1,213 @@
+//@version=5
+// strategy("My firstactual RSI automated strategy",
+ // shorttitle="Rsistratv1", 
+ // overlay=true, 
+ // pyramiding=10, 
+ // currency=currency.USD, 
+ // commission_type=strategy.commission.cash_per_order, 
+ // commission_value=0,
+ // initial_capital=100000)
+
+indicator("rsi VPA strategy",
+ shorttitle="RSIVPA",
+ overlay=true)
+
+// Closing all trades, max daily drawdown
+// strategy.risk.max_intraday_loss(1, strategy.percent_of_equity)
+
+// suspending the strategy at three days consequtive max daily drawdown
+// strategy.risk.max_cons_loss_days(3, "You fucked up somewhere")
+
+// max account drawdown
+// strategy.risk.max_drawdown(0.1, strategy.percent_of_equity, "you REALLY fucked up")
+
+rsi = ta.rsi(close, 14)
+plot(rsi)
+
+// RSI SMA
+sma4 = ta.sma(rsi, 14) // this is just inputting the sma into the rsi chart
+plot(sma4, "SMA", #ffa500, 2)
+
+// Positive offset  in rsi
+sma1 = ta.sma(rsi, 14) + 5.5
+plot(sma1, color=#00ff00)
+
+// Negative offset MA in rsi
+sma2 = ta.sma(rsi, 14) + -5.5
+plot(sma2, color=#ff0000)
+
+// offset MA crossover\
+MACH = ta.crossover(sma1, rsi)
+MACL = ta.crossunder(sma2, rsi)
+
+// 2nd indicator bbands
+[middle, upper, lower] = ta.bb(rsi, 14, 1.5)
+mid = middle
+upp = upper
+loww = lower
+plot(mid, color=color.yellow)
+plot(upp, color=color.green, linewidth=2)
+plot(loww, color=color.red)
+BBCH = ta.crossover(upp, rsi)
+BBCL = ta.crossunder(loww, rsi)
+
+// 1st indicator highs
+LL = ta.lowest(rsi, 15)
+HH = ta.highest(rsi,15)
+plot(LL, color=#ffc0cb, offset=0)
+plot(HH, color=#a020f0, offset=0)
+HHC = ta.crossunder(rsi, HH)
+LLC = ta.crossover(rsi, LL)
+
+// COMPARISON OPTIONS
+highLow = 'High vs Low'
+openClose = 'Open vs Close'
+openClosePrevious = 'Open vs Previous Close'
+dollarVolume = '$ Volume'
+comparisonType = input.string(openClosePrevious, options=[highLow, openClose, openClosePrevious, dollarVolume], title='Comparison Type')
+
+matchPriceVolume = input(true, "Match Price & Volume")
+
+ignore = 'Ignore em'
+blowSma = 'BLOW THROUGH SMA'
+blowEma = 'BLOW THROUGH EMA'
+maHandling = input.string(blowSma, options=[ignore, blowSma, blowEma], title='Moving Average Handling')
+
+ema = ta.ema(close, 21)
+sma = ta.sma(close, 10)
+plot(ema, title="EMA", color=color.blue)
+plot(sma, title="SMA", color=color.black)
+
+volumeSrc = volume
+// plot(volumeSrc)
+
+candleSize = 
+  comparisonType == openClosePrevious ? math.abs(close - open[1]) : 
+  comparisonType == highLow ? high - low :
+  comparisonType == openClose ? math.abs(open-close) :
+  comparisonType == dollarVolume ? math.abs((hlc3 * volume) - (hlc3[1] * volume[1])) : na
+  
+// plot(candleSize)
+candleSrc = candleSize
+cbasis = ta.sma(candleSrc, 45)
+vbasis = ta.sma(volumeSrc, 45)
+
+// CANDLE ONE DEVIATION
+candleOneDev = ta.stdev(candleSrc, 45)
+coneUpper = cbasis + candleOneDev
+coneLower = cbasis - candleOneDev
+
+// CANDLE TWO DEVIATION
+candleTwoDev = 2 * ta.stdev(candleSrc, 45)
+ctwoUpper = cbasis + candleTwoDev
+ctwoLower = cbasis - candleTwoDev
+
+// VOLUME ONE DEVIATION
+volumeOneDev = ta.stdev(volumeSrc, 45)
+voneUpper = vbasis + volumeOneDev
+voneLower = vbasis - volumeOneDev
+
+// VOLUME TWO DEVIATION
+volumeTwoDev = 2 * ta.stdev(volumeSrc, 45)
+vtwoUpper = vbasis + volumeTwoDev
+vtwoLower = vbasis - volumeTwoDev
+
+volmath1 = volumeSrc > vtwoUpper ? 1 : 0
+volmath2 = volumeSrc > voneUpper ? 1 : 0
+volmath3 = 0
+volmath4 = volumeSrc < voneLower ? -1 : 0
+volmath5 = volumeSrc < vtwoLower ? -1 : 0
+
+canmath1 = candleSrc > ctwoUpper ? 1 : 0
+canmath2 = candleSrc > coneUpper ? 1 : 0
+canmath3 = 0
+canmath4 = candleSrc < coneLower ? -1 : 0
+canmath5 = candleSrc < ctwoLower ? -1 : 0
+
+volumeMath = volmath1 + volmath2 + volmath3 + volmath4 + volmath5
+candleMath = canmath1 + canmath2 + canmath3 + canmath4 + canmath5
+
+upDay = (close - open) > 0
+downDay = (close - open) < 0
+
+highPriceVolume = (volumeMath > 0 and candleMath > 0)
+priceVolumeMatching = matchPriceVolume ? (volumeMath == candleMath) : true
+
+goForLaunch = 
+  maHandling == ignore ? true : 
+  maHandling == blowSma ? close > sma :
+  maHandling == blowEma ? close > ema :
+  true
+  
+goForCrash = 
+  maHandling == ignore ? true : 
+  maHandling == blowSma ? close < sma :
+  maHandling == blowEma ? close < ema :
+  true
+
+sellCondition = downDay == true and highPriceVolume == true and priceVolumeMatching == true and goForCrash == true
+buyCondition = upDay == true and highPriceVolume == true and priceVolumeMatching == true and goForLaunch == true
+
+sellArrow = ta.barssince(sellCondition[1]) > ta.barssince(buyCondition[1]) and sellCondition == true
+buyArrow = ta.barssince(sellCondition[1]) < ta.barssince(buyCondition[1]) and buyCondition == true
+
+plotshape(sellArrow, text="Sell", title="Sell", style=shape.labeldown, color=color.red, textcolor=color.black, location=location.abovebar, size=size.large)
+plotshape(buyArrow, text="Buy", title="Buy", style=shape.labelup, color=color.blue, textcolor=color.black, location=location.belowbar, size=size.large)
+
+smalltrade = input.bool(false, "Enter smaller trades", confirm=true)
+
+start = timestamp(2021,1,1,0,0,0)
+end = timestamp(2022,4,1,0,0,0)
+
 sellconditions = 0
-if ta.crossover(sma1, rsi) == ta.crossover(upp, rsi) == ta.crossunder(rsi, HH) and ta.barssince(sellArrow) < ta.barssince(buyArrow)
-  sellconditions:=4
+if ta.crossover(sma1, rsi) == ta.crossover(upp, rsi) == ta.crossunder(rsi, HH) and ta.barssince(sellArrow) < ta.barssince(buyArrow) and time >= start and time <= end
+    sellconditions:=4
+if ta.crossover(sma1, rsi) == ta.crossover(upp, rsi) and ta.crossover(sma1, rsi) != ta.crossunder(rsi, HH) and ta.barssince(sellArrow) < ta.barssince(buyArrow) and smalltrade == true and ta.barssince(sellconditions==4) < ta.barssince(sellArrow) and time >= start and time <= end
+    sellconditions:=3
+if ta.crossover(sma1, rsi) == ta.crossunder(rsi, HH) and ta.crossover(sma1, rsi) != ta.crossover(upp, rsi) and ta.barssince(sellArrow) < ta.barssince(buyArrow) and smalltrade == true and ta.barssince(sellconditions==4) < ta.barssince(sellArrow) and time >= start and time <= end
+    sellconditions:=3
+if  ta.crossunder(rsi, HH) == ta.crossover(upp, rsi) and ta.crossunder(rsi, HH) != ta.crossover(sma1, rsi) and ta.barssince(sellArrow) < ta.barssince(buyArrow) and smalltrade == true and ta.barssince(sellconditions==4) < ta.barssince(sellArrow) and time >= start and time <= end
+    sellconditions:=3
+buyconditions = 0
+if  ta.crossunder(sma2, rsi) == ta.crossunder(loww, rsi) == ta.crossover(rsi, LL) and ta.barssince(buyArrow) < ta.barssince(sellArrow) and time >= start and time <= end
+    buyconditions:=4
+if  ta.crossunder(sma2, rsi) == ta.crossunder(loww, rsi) and ta.crossunder(sma2, rsi) != ta.crossover(rsi, LL) and ta.barssince(sellArrow) > ta.barssince(buyArrow) and smalltrade == true and ta.barssince(buyconditions==4) < ta.barssince(buyArrow) and time >= start and time <= end
+    buyconditions:=3
+if  ta.crossunder(sma2, rsi) == ta.crossover(rsi, LL) and ta.crossunder(sma2, rsi) != ta.crossunder(loww, rsi) and ta.barssince(buyArrow) < ta.barssince(sellArrow) and smalltrade == true and ta.barssince(buyconditions==4) < ta.barssince(buyArrow) and time >= start and time <= end
+    buyconditions:=3
+if  ta.crossover(rsi, LL) == ta.crossunder(loww, rsi) and ta.crossover(rsi, LL) != ta.crossunder(sma2, rsi) and ta.barssince(buyArrow) < ta.barssince(sellArrow) and smalltrade == true and ta.barssince(buyconditions==4) < ta.barssince(buyArrow) and time >= start and time <= end
+    buyconditions:=3
 plotchar(sellconditions==4, char='🔶', location=location.abovebar, color=#ff0000, text="4", size=size.tiny)
+plotchar(sellconditions==3, char='🔶', location=location.abovebar, color=#ff0000, text="3", size=size.tiny)
+plotchar(buyconditions==4, char='🔷', location=location.belowbar, color=#ff0000, text="4", size=size.tiny)
+plotchar(buyconditions==3, char='🔷', location=location.belowbar, color=#ff0000, text="3", size=size.tiny)
 
-strategy.entry(id=sell1, strategy.short, qty=1, when=Sell11, alert_message="long entry 1")   
+buy11  = buyconditions  == 4
+buy22  = buyconditions  == 3
+sell11 = sellconditions == 4
+sell22 = sellconditions == 3
 
-strategy.exit("exit short", from_entry=sell1, profit = 1000, loss = 200, trail_points=200, trail_offset=100, alert_message="Close sell2")
+
+qty1       = input.int(2500, "qty large" )
+qty2       = input.int(500, "qty small")
+Takeprofit = input.int(18000, "profit large")
+profit2    = input.int(8000, "profit small")
+Stoploss   = input.int(100, "loss large")
+loss2      = input.int(250, "loss small")
+trailingstop  = input.int(300, "trail large")
+trail2     = input.int(200, "trail small")
+offsetdelay  = input.int(250, "trailoff large")
+trailoff2  = input.int(100, "trailoff small")
+
+alertcondition(buy11, title= "buy", message='{{plot("Takeprofit")}} \n{{plot("Stoploss")}} \n{{plot("long")}} \n{{plot("XAUUSD")}} \n{{plot("trailingstop)}} \n{{plot("offsetdelay")}}')
+alertcondition(sell11, title="sell", message='{{plot("Takeprofit")}} \n{{plot("Stoploss")}} \n{{plot("long")}} \n{{plot("XAUUSD")}} \n{{plot("trailingstop)}} \n{{plot("offsetdelay")}}')
+
+// strategy.entry("sell1", strategy.short, qty=qty1, when=sell11)
+// strategy.exit("exit short", from_entry="sell1", profit = profit1, loss = loss1, trail_points=trail1, trail_offset=trailoff1)
+// strategy.entry("sell2", strategy.short, qty=qty2, when=sell22)
+// strategy.exit("exit short", from_entry="sell2", profit = profit2, loss = loss2, trail_points=trail2, trail_offset=trailoff2)
+// strategy.entry("buy1", strategy.long, qty=qty1, when=buy11)
+// strategy.exit("exit buy", from_entry="buy1", profit = profit1, loss = loss1, trail_points=trail1, trail_offset=trailoff1)
+// strategy.entry("buy2", strategy.long, qty=qty2, when=buy22)
+// strategy.exit("exit short", from_entry="buy2", profit = profit2, loss = loss2, trail_points=trail2, trail_offset=trailoff2)
+
